@@ -1,428 +1,1003 @@
 <!DOCTYPE html>
 <html lang="vi" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IoTFarm - Hệ thống Quản lý Nông nghiệp Thông minh</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: { colors: { primary: '#10B981' } }
-            }
-        }
-    </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IoTFarm · Giám sát vườn & Điều khiển PID ESP32</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+  <style>
+    :root {
+      --bg-main: #0a0f0d;
+      --bg-sidebar: #0e1512;
+      --bg-card: #141d19;
+      --bg-input: #1b2621;
+      --border-color: #23312b;
+      --text-main: #f1f5f9;
+      --text-muted: #8b9d93;
+      --accent: #52b788;
+      --accent-hover: #40916c;
+    }
+
+    /* Chế độ Sáng (Light Mode) */
+    html:not(.dark) {
+      --bg-main: #f1f5f3;
+      --bg-sidebar: #ffffff;
+      --bg-card: #ffffff;
+      --bg-input: #f8faf9;
+      --border-color: #d8e2dc;
+      --text-main: #0f172a;
+      --text-muted: #526358;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    .iot-sidebar {
+      background-color: var(--bg-sidebar);
+      border-color: var(--border-color);
+    }
+
+    .iot-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .iot-input {
+      background-color: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 0.75rem;
+    }
+
+    .iot-muted {
+      color: var(--text-muted);
+    }
+
+    .iot-btn-primary {
+      background-color: var(--accent);
+      color: #081c15;
+      font-weight: 700;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .iot-btn-primary:hover {
+      opacity: 0.92;
+    }
+
+    .nav-item.active {
+      background-color: rgba(82, 183, 136, 0.14);
+      color: var(--accent);
+      border: 1px solid rgba(82, 183, 136, 0.25);
+    }
+
+    .hero-banner {
+      background: linear-gradient(135deg, #161f30 0%, #1a2639 55%, #192f2c 100%);
+      position: relative;
+      overflow: hidden;
+    }
+  </style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen flex">
+<body class="min-h-screen flex flex-col md:flex-row">
 
-    <!-- KHUNG XÁC THỰC: ĐĂNG NHẬP / TẠO TÀI KHOẢN -->
-    <div id="auth-container" class="fixed inset-0 bg-gray-950 z-50 flex items-center justify-center p-4">
-        <div class="bg-gray-900 border border-gray-800 w-full max-w-md p-8 rounded-2xl space-y-6 shadow-2xl">
-            <div class="text-center space-y-2">
-                <div class="inline-block bg-emerald-500/10 p-3 rounded-2xl text-emerald-400 text-3xl">🌱</div>
-                <h2 id="auth-title" class="text-2xl font-bold">Đăng nhập IoTFarm</h2>
-                <p class="text-sm text-gray-400">Dùng Gmail hoặc số điện thoại để tiếp tục</p>
-            </div>
-
-            <!-- Form Đăng nhập -->
-            <div id="form-login" class="space-y-4">
-                <div>
-                    <label class="text-xs text-gray-400">Gmail hoặc Số điện thoại</label>
-                    <input type="text" id="login-email" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 focus:border-emerald-500 outline-none" value="buitrangiahung2004@gmail.com">
-                </div>
-                <div>
-                    <label class="text-xs text-gray-400">Mật khẩu</label>
-                    <input type="password" id="login-pass" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 focus:border-emerald-500 outline-none" value="123456">
-                </div>
-                <button onclick="handleLogin()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold transition">Đăng nhập</button>
-                <div class="text-center text-sm text-gray-400">
-                    Chưa có tài khoản? <a href="#" onclick="toggleAuthMode('register')" class="text-emerald-400 font-medium hover:underline">Tạo tài khoản</a>
-                </div>
-            </div>
-
-            <!-- Form Tạo tài khoản -->
-            <div id="form-register" class="space-y-4 hidden">
-                <div>
-                    <label class="text-xs text-gray-400">Họ tên đầy đủ</label>
-                    <input type="text" id="reg-name" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 focus:border-emerald-500 outline-none" placeholder="Nguyễn Văn A">
-                </div>
-                <div>
-                    <label class="text-xs text-gray-400">Gmail hoặc Số điện thoại</label>
-                    <input type="text" id="reg-email" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 focus:border-emerald-500 outline-none" placeholder="email@gmail.com hoặc SĐT">
-                </div>
-                <div>
-                    <label class="text-xs text-gray-400">Mật khẩu mới</label>
-                    <input type="password" id="reg-pass" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 focus:border-emerald-500 outline-none" placeholder="••••••••">
-                </div>
-                <button onclick="handleRegister()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold transition">Đăng ký tài khoản</button>
-                <div class="text-center text-sm text-gray-400">
-                    Đã có tài khoản? <a href="#" onclick="toggleAuthMode('login')" class="text-emerald-400 font-medium hover:underline">Đăng nhập</a>
-                </div>
-            </div>
+  <!-- ================= SIDEBAR TRÁI CHUẨN IOTFARM ================= -->
+  <aside class="iot-sidebar w-full md:w-64 md:min-h-screen border-b md:border-b-0 md:border-r flex flex-col justify-between p-4 flex-shrink-0 select-none">
+    <div>
+      <!-- Logo -->
+      <div class="flex items-center gap-3 px-2 py-2 mb-6">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold shadow-md" style="background-color: var(--accent)">
+          🌱
         </div>
+        <span class="font-extrabold text-lg tracking-tight">IoTFarm</span>
+      </div>
+
+      <!-- Menu chính -->
+      <nav class="space-y-1.5 text-sm font-medium">
+        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item active w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition text-left">
+          <span>⊞</span> <span>Dashboard</span>
+        </button>
+        <button onclick="switchTab('plants')" id="nav-plants" class="nav-item w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl iot-muted hover:text-white transition text-left">
+          <span>🍃</span> <span>Kiểu cây</span>
+        </button>
+        <button onclick="switchTab('weather')" id="nav-weather" class="nav-item w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl iot-muted hover:text-white transition text-left">
+          <span>⛅</span> <span>Thời tiết</span>
+        </button>
+        <button onclick="switchTab('account')" id="nav-account" class="nav-item w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl iot-muted hover:text-white transition text-left">
+          <span>👤</span> <span>Tài khoản</span>
+        </button>
+      </nav>
     </div>
 
-    <!-- SIDEBAR ỨNG DỤNG CHÍNH -->
-    <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col justify-between hidden md:flex">
-        <div>
-            <div class="p-6 flex items-center space-x-3">
-                <div class="bg-emerald-500/10 p-2 rounded-xl text-emerald-400 font-bold text-xl">🌱</div>
-                <span class="text-xl font-bold tracking-wider">IoTFarm</span>
-            </div>
-            <nav class="mt-4 px-4 space-y-1">
-                <a href="#dashboard" onclick="switchTab('dashboard')" id="nav-dashboard" class="tab-link flex items-center space-x-3 px-4 py-3 rounded-xl bg-emerald-500/10 text-emerald-400 font-medium transition">📊 Dashboard</a>
-                <a href="#plants" onclick="switchTab('plants')" id="nav-plants" class="tab-link flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-white transition">🌿 Kiểu cây</a>
-                <a href="#devices" onclick="switchTab('devices')" id="nav-devices" class="tab-link flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-white transition">🔌 Thêm thiết bị</a>
-                <a href="#weather" onclick="switchTab('weather')" id="nav-weather" class="tab-link flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-white transition">⛅ Thời tiết</a>
-                <a href="#account" onclick="switchTab('account')" id="nav-account" class="tab-link flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-white transition">👤 Tài khoản</a>
-            </nav>
+    <!-- Chân Sidebar: Trạng thái & Tài khoản -->
+    <div class="pt-4 mt-6 border-t space-y-3" style="border-color: var(--border-color)">
+      <div class="flex items-center justify-between px-2 text-xs iot-muted">
+        <div class="flex items-center gap-2">
+          <span id="liveDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="liveText">Cập nhật trực tiếp</span>
         </div>
-        <div class="p-4 border-t border-gray-800">
-            <button onclick="logout()" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 py-2.5 rounded-xl font-medium transition">
-                🚪 Đăng xuất
+        <div class="flex items-center gap-2">
+          <button onclick="toggleLang()" id="langBtn" class="hover:underline font-semibold">VN</button>
+          <button onclick="quickToggleDark()" class="p-1.5 rounded-lg hover:bg-white/10 transition" title="Đổi giao diện Sáng / Tối">☀️</button>
+        </div>
+      </div>
+
+      <!-- Hộp User -->
+      <div class="iot-card p-2.5 flex items-center justify-between">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div id="sidebarAvatar" class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-slate-950 flex-shrink-0" style="background-color: var(--accent)">
+            B
+          </div>
+          <div class="truncate">
+            <div id="sidebarName" class="text-xs font-bold truncate">Bùi Trần Gia Hưng</div>
+            <div id="sidebarEmail" class="text-[11px] iot-muted truncate">buitrangiahung2004@gmail.com</div>
+          </div>
+        </div>
+        <button onclick="switchTab('account')" class="iot-muted hover:text-rose-400 p-1 text-sm" title="Tài khoản">➔</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ================= NỘI DUNG CHÍNH ================= -->
+  <main class="flex-1 p-5 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full space-y-6">
+
+    <!-- ==================== TAB 1: DASHBOARD ==================== -->
+    <div id="tab-dashboard" class="space-y-6">
+
+      <!-- HERO BANNER GIỐNG HÌNH 1 -->
+      <div class="hero-banner rounded-3xl p-6 md:p-8 border border-slate-800 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div class="space-y-2 z-10">
+          <p id="greetingText" class="text-xs text-slate-300 font-medium">Chào buổi sáng · Thứ Hai, 19/10</p>
+          <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight">Dashboard</h1>
+          <p class="text-sm font-semibold text-emerald-300 pt-1">🌱 Chào mừng tới IoTFarm — Hệ thống Buồng Ươm ESP32</p>
+          <p class="text-xs text-slate-300">Đang kết nối: <b id="connStatusText" class="text-amber-300">ESP32 LAN (192.168.100.91)</b> · Kiểu cây đang chạy: <b id="activePlantBadge" class="text-emerald-300">Đậu xanh (32°C | 40%)</b></p>
+          <div class="pt-3 flex flex-wrap gap-2.5">
+            <button onclick="openConnModal()" class="iot-btn-primary px-4 py-2 rounded-full text-xs flex items-center gap-1.5 shadow-lg">
+              <span>＋</span> Cấu hình Thiết bị ESP32
             </button>
+            <button onclick="exportCSV()" class="px-4 py-2 rounded-full text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition">
+              ⬇️ Xuất Báo cáo CSV
+            </button>
+          </div>
         </div>
-    </aside>
 
-    <!-- MAIN CONTENT -->
-    <main class="flex-1 flex flex-col h-screen overflow-y-auto">
-        <header class="bg-gray-900/50 backdrop-blur border-b border-gray-800 p-4 flex justify-between items-center sticky top-0 z-10">
-            <h1 id="page-title" class="text-xl font-bold">Dashboard</h1>
-            <div class="flex items-center space-x-4">
-                <select id="lang-select" onchange="changeLanguage(this.value)" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm">
-                    <option value="vi">Tiếng Việt</option>
-                    <option value="en">English</option>
-                </select>
-                <div id="user-badge" class="text-sm bg-emerald-500/10 text-emerald-400 px-3 py-1.5 rounded-lg border border-emerald-500/20">Admin</div>
-            </div>
-        </header>
-
-        <div class="p-6 space-y-6">
-
-            <!-- ==================== TAB 1: DASHBOARD ĐẦY ĐỦ ==================== -->
-            <section id="sec-dashboard" class="space-y-6">
-                <!-- 4 Thẻ cảm biến -->
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                        <div class="text-gray-400 text-xs flex justify-between"><span>🌡️ NHIỆT ĐỘ TẦNG ƯƠM</span><span class="text-rose-400 font-bold">GPIO 4</span></div>
-                        <div class="text-3xl font-extrabold mt-2"><span id="val-temp">32.00</span>°C</div>
-                        <div class="text-xs text-amber-400 mt-2">Setpoint: <span id="val-setpoint">32.0</span>°C</div>
-                    </div>
-                    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                        <div class="text-gray-400 text-xs flex justify-between"><span>💧 ẨM KHÔNG KHÍ</span><span class="text-blue-400 font-bold">DHT11/22</span></div>
-                        <div class="text-3xl font-extrabold mt-2 text-blue-400"><span id="val-hum">65.0</span>%</div>
-                        <div class="text-xs text-emerald-400 mt-2">Trạng thái: Ổn định</div>
-                    </div>
-                    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                        <div class="text-gray-400 text-xs flex justify-between"><span>🌱 ĐỘ ẨM ĐẤT</span><span class="text-emerald-400 font-bold">GPIO 34</span></div>
-                        <div class="text-3xl font-extrabold mt-2 text-emerald-400"><span id="val-soil">55</span>%</div>
-                        <div class="text-xs text-gray-400 mt-2 flex justify-between"><span>Tưới dưới: 40%</span><span id="badge-pump" class="font-bold text-gray-300">Bơm: TẮT</span></div>
-                    </div>
-                    <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl">
-                        <div class="text-gray-400 text-xs flex justify-between"><span>🔥 SƯỞI PID</span><span class="text-amber-400 font-bold">MOSFET 25</span></div>
-                        <div class="text-3xl font-extrabold mt-2 text-amber-400"><span id="val-heater-pow">0</span>% PWM</div>
-                        <div class="w-full bg-gray-800 h-2 rounded-full mt-3 overflow-hidden">
-                            <div id="heater-bar" class="bg-amber-400 h-full w-0 transition-all"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Khối điều khiển PID, Ngưỡng & Thiết bị -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Dò PID -->
-                    <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
-                        <h3 class="font-bold text-sm">🧠 Tự động Chỉnh Hệ số PID</h3>
-                        <div class="grid grid-cols-3 gap-2">
-                            <div><label class="text-[11px] text-gray-400">Kp</label><input type="number" id="inp-kp" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-center text-amber-400 font-bold" value="60"></div>
-                            <div><label class="text-[11px] text-gray-400">Ki</label><input type="number" id="inp-ki" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-center text-emerald-400 font-bold" value="1.2"></div>
-                            <div><label class="text-[11px] text-gray-400">Kd</label><input type="number" id="inp-kd" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-2 text-center text-blue-400 font-bold" value="3500"></div>
-                        </div>
-                        <button onclick="alert('Đã lưu hệ số PID xuống mạch ESP32!')" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded-xl font-bold text-xs transition">💾 Lưu Kp, Ki, Kd</button>
-                    </div>
-
-                    <!-- Cài đặt Ngưỡng -->
-                    <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
-                        <h3 class="font-bold text-sm">🎛️ Cài đặt Ngưỡng Nhiệt & Tưới</h3>
-                        <div>
-                            <div class="flex justify-between text-xs text-gray-400 mb-1"><span>Setpoint Nhiệt độ</span><b id="lbl-sp" class="text-amber-400">32.0 °C</b></div>
-                            <input type="range" min="18" max="40" step="0.5" id="slider-sp" class="w-full accent-emerald-500" value="32" oninput="document.getElementById('lbl-sp').innerText=this.value+' °C'">
-                        </div>
-                        <button onclick="alert('Đã gửi thông số Setpoint xuống ESP32!')" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded-xl font-bold text-xs transition">🚀 Gửi Ngưỡng Xuống Mạch</button>
-                    </div>
-
-                    <!-- Trạng thái thiết bị -->
-                    <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
-                        <h3 class="font-bold text-sm">⚡ Điều khiển Thiết bị</h3>
-                        <div class="flex justify-between items-center bg-gray-800/50 p-3 rounded-xl text-xs">
-                            <span>Lò sưởi PWM</span>
-                            <button onclick="toggleDevice('heater')" id="btn-heater" class="px-3 py-1.5 rounded-lg font-bold bg-amber-500 text-gray-950">ĐANG BẬT</button>
-                        </div>
-                        <div class="flex justify-between items-center bg-gray-800/50 p-3 rounded-xl text-xs">
-                            <span>Máy bơm nước</span>
-                            <button onclick="toggleDevice('pump')" id="btn-pump" class="px-3 py-1.5 rounded-lg font-bold bg-gray-800 text-gray-400">ĐANG TẮT</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Biểu đồ -->
-                <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-3">
-                    <h3 class="font-bold text-sm">📊 Biểu đồ Giám sát Thời gian thực</h3>
-                    <div class="h-64"><canvas id="realtimeChart"></canvas></div>
-                </div>
-            </section>
-
-            <!-- ==================== TAB 2: KIỂU CÂY & MẪU CHUẨN ==================== -->
-            <section id="sec-plants" class="space-y-6 hidden">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h2 class="text-2xl font-bold">Kiểu cây</h2>
-                        <p class="text-xs text-gray-400 mt-1">Mỗi kiểu cây là một bộ ngưỡng tưới và cảnh báo.</p>
-                    </div>
-                    <button onclick="openNewPlantModal()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 rounded-full font-bold text-xs transition shadow-lg">+ Kiểu cây mới</button>
-                </div>
-
-                <div id="my-plants-container" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
-
-                <div class="space-y-3 pt-4">
-                    <h3 class="text-lg font-bold text-gray-300">Mẫu có sẵn</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-3">
-                            <div class="text-2xl">🍅 Cà chua</div>
-                            <p class="text-xs text-gray-400">Tránh để đất quá ướt lâu dễ nứt quả, thối rễ.</p>
-                            <div class="text-xs text-gray-400 space-y-1">
-                                <div>🌡️ Nhiệt độ: <b>20–30°C</b></div>
-                                <div>💧 Ẩm không khí: <b>55–75%</b></div>
-                                <div>💧 Tưới khi đất: <b>dưới 45%</b></div>
-                            </div>
-                            <button onclick="applyPlant('Cà chua', 26, 45)" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-xs font-bold transition mt-2">Áp dụng ESP32</button>
-                        </div>
-                        <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-3">
-                            <div class="text-2xl">🥒 Dưa leo</div>
-                            <p class="text-xs text-gray-400">Cần nhiều nước giai đoạn ra quả.</p>
-                            <div class="text-xs text-gray-400 space-y-1">
-                                <div>🌡️ Nhiệt độ: <b>20–32°C</b></div>
-                                <div>💧 Ẩm không khí: <b>60–85%</b></div>
-                                <div>💧 Tưới khi đất: <b>dưới 55%</b></div>
-                            </div>
-                            <button onclick="applyPlant('Dưa leo', 28, 55)" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-xs font-bold transition mt-2">Áp dụng ESP32</button>
-                        </div>
-                        <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-3">
-                            <div class="text-2xl">🥬 Rau cải</div>
-                            <p class="text-xs text-gray-400">Cải ngọt, cải xanh, cải bẹ – ưa ẩm, tưới đều.</p>
-                            <div class="text-xs text-gray-400 space-y-1">
-                                <div>🌡️ Nhiệt độ: <b>18–30°C</b></div>
-                                <div>💧 Ẩm không khí: <b>60–85%</b></div>
-                                <div>💧 Tưới khi đất: <b>dưới 50%</b></div>
-                            </div>
-                            <button onclick="applyPlant('Rau cải', 25, 50)" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-xs font-bold transition mt-2">Áp dụng ESP32</button>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ==================== TAB 3: THÊM THIẾT BỊ ESP32 ==================== -->
-            <section id="sec-devices" class="space-y-6 hidden">
-                <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl max-w-xl mx-auto space-y-4">
-                    <h2 class="text-xl font-bold">🔌 Thêm thiết bị ESP32 thực tế</h2>
-                    <p class="text-sm text-gray-400">Kết nối trực tiếp mạch phần cứng ESP32 qua mạng LAN hoặc đám mây.</p>
-                    <input type="text" id="esp-ip" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-sm" value="192.168.100.91" placeholder="Nhập địa chỉ IP ESP32...">
-                    <button onclick="alert('Đã kết nối thành công với mạch ESP32 thực tế!')" class="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold transition text-sm">Xác thực & Kết nối</button>
-                </div>
-            </section>
-
-            <!-- ==================== TAB 4: THỜI TIẾT 63 TỈNH THÀNH ==================== -->
-            <section id="sec-weather" class="space-y-6 hidden">
-                <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-xl font-bold">⛅ Thời tiết Realtime 63 Tỉnh Thành</h2>
-                        <select onchange="updateWeather(this.value)" class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm">
-                            <option value="Hồ Chí Minh">TP. Hồ Chí Minh</option>
-                            <option value="Hà Nội">Hà Nội</option>
-                            <option value="Đà Nẵng">Đà Nẵng</option>
-                            <option value="Cần Thơ">Cần Thơ</option>
-                            <option value="Hải Phòng">Hải Phòng</option>
-                            <option value="Lâm Đồng">Lâm Đồng (Đà Lạt)</option>
-                        </select>
-                    </div>
-                    <div class="p-6 bg-gray-800/40 rounded-xl flex justify-between items-center">
-                        <div>
-                            <div id="w-loc" class="font-bold text-lg">TP. Hồ Chí Minh</div>
-                            <div id="w-desc" class="text-sm text-gray-400">Trời quang mây, độ ẩm 68%</div>
-                        </div>
-                        <div id="w-temp" class="text-3xl font-extrabold text-emerald-400">31.5°C</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ==================== TAB 5: TÀI KHOẢN & ADMIN ==================== -->
-            <section id="sec-account" class="space-y-6 hidden">
-                <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-4">
-                    <h2 class="text-xl font-bold">👤 Thông tin Tài khoản & Quản trị</h2>
-                    <div class="border-t border-gray-800 pt-4 space-y-3">
-                        <h3 class="font-bold text-sm">🛡️ Danh sách tài khoản hệ thống (Admin View)</h3>
-                        <div class="bg-gray-800/40 rounded-xl overflow-hidden">
-                            <table class="w-full text-left text-xs">
-                                <thead class="bg-gray-800 text-gray-400">
-                                    <tr><th class="p-3">Họ tên</th><th class="p-3">Tài khoản</th><th class="p-3">Vai trò</th></tr>
-                                </thead>
-                                <tbody>
-                                    <tr class="border-t border-gray-800">
-                                        <td class="p-3 font-bold">Bùi Trần Gia Hưng</td>
-                                        <td class="p-3">buitrangiahung2004@gmail.com</td>
-                                        <td class="p-3 text-emerald-400 font-bold">Admin</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
+        <!-- Hình minh họa Chậu cây & Mặt trăng SVG chuẩn mẫu -->
+        <div class="relative w-48 h-36 self-center md:self-end flex-shrink-0">
+          <svg viewBox="0 0 220 150" class="w-full h-full">
+            <!-- Sao & Mặt trăng -->
+            <circle cx="40" cy="25" r="1.5" fill="#94a3b8" />
+            <circle cx="95" cy="18" r="2" fill="#cbd5e1" />
+            <circle cx="130" cy="40" r="1.5" fill="#94a3b8" />
+            <circle cx="180" cy="35" r="22" fill="#475569" opacity="0.45" />
+            <path d="M182 20 A14 14 0 1 0 196 38 A11 11 0 1 1 182 20 Z" fill="#e2e8f0" />
+            <!-- Đồi cỏ -->
+            <path d="M0 125 Q80 105 220 125 L220 150 L0 150 Z" fill="#1b4332" opacity="0.7" />
+            <!-- Chậu đất nung -->
+            <polygon points="105,102 145,102 139,140 111,140" fill="#b56539" />
+            <rect x="101" y="96" width="48" height="7" rx="2" fill="#c87343" />
+            <!-- Thân & Lá cây -->
+            <rect x="123" y="45" width="4" height="52" fill="#2d6a4f" />
+            <ellipse cx="112" cy="75" rx="13" ry="7" transform="rotate(-20 112 75)" fill="#52b788" />
+            <ellipse cx="138" cy="68" rx="13" ry="7" transform="rotate(20 138 68)" fill="#52b788" />
+            <ellipse cx="113" cy="52" rx="12" ry="6" transform="rotate(-25 113 52)" fill="#74c69d" />
+            <ellipse cx="136" cy="46" rx="12" ry="6" transform="rotate(25 136 46)" fill="#40916c" />
+          </svg>
         </div>
-    </main>
+      </div>
 
-    <!-- MODAL TẠO KIỂU CÂY MỚI -->
-    <div id="plant-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-        <div class="bg-gray-900 border border-gray-800 w-full max-w-md p-6 rounded-2xl space-y-4">
-            <h3 class="text-xl font-bold">🌿 Tạo kiểu cây mới</h3>
-            <div><label class="text-xs text-gray-400">Tên cây</label><input type="text" id="new-name" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 text-sm" placeholder="Ví dụ: Dâu tây"></div>
-            <div class="grid grid-cols-2 gap-3">
-                <div><label class="text-xs text-gray-400">Biểu tượng</label><input type="text" id="new-icon" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 text-center text-sm" value="🍓"></div>
-                <div><label class="text-xs text-gray-400">Setpoint (°C)</label><input type="number" id="new-sp" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 text-sm" value="25"></div>
-            </div>
-            <div><label class="text-xs text-gray-400">Tưới đất dưới (%)</label><input type="number" id="new-soil" class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 mt-1 text-sm" value="45"></div>
-            <div class="flex justify-end space-x-3 pt-2">
-                <button onclick="closeNewPlantModal()" class="px-4 py-2 bg-gray-800 rounded-xl text-xs">Huỷ</button>
-                <button onclick="saveNewPlant()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-xs">Tạo cây</button>
-            </div>
+      <!-- 4 THẺ THÔNG SỐ CẢM BIẾN THỜI GIAN THỰC -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="iot-card p-4">
+          <div class="flex justify-between text-xs iot-muted"><span>🌡️ NHIỆT ĐỘ TẦNG ƯƠM</span><span class="text-rose-400 font-bold">GPIO 4</span></div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span id="valTemp" class="text-3xl font-extrabold">32.00</span>
+            <span class="text-sm iot-muted">°C</span>
+          </div>
+          <div class="mt-2 text-xs iot-muted">Setpoint: <b id="lblSetpoint" class="text-amber-400">32.0 °C</b></div>
         </div>
+
+        <div class="iot-card p-4">
+          <div class="flex justify-between text-xs iot-muted"><span>💧 ẨM KHÔNG KHÍ</span><span class="text-blue-400 font-bold">DHT11/22</span></div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span id="valHum" class="text-3xl font-extrabold text-blue-400">65.0</span>
+            <span class="text-sm iot-muted">%</span>
+          </div>
+          <div class="mt-2 text-xs iot-muted">Trạng thái: <b class="text-emerald-400">Đọc chuẩn</b></div>
+        </div>
+
+        <div class="iot-card p-4">
+          <div class="flex justify-between text-xs iot-muted"><span>🌱 ĐỘ ẨM ĐẤT</span><span class="text-emerald-400 font-bold">GPIO 34</span></div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span id="valSoil" class="text-3xl font-extrabold text-emerald-400">55</span>
+            <span class="text-sm iot-muted">%</span>
+          </div>
+          <div class="mt-2 text-xs iot-muted flex justify-between">
+            <span>Tưới dưới: <b id="lblSoilTh" class="text-amber-400">40%</b></span>
+            <span id="badgePump" class="font-bold">Bơm: TẮT</span>
+          </div>
+        </div>
+
+        <div class="iot-card p-4">
+          <div class="flex justify-between text-xs iot-muted"><span>🔥 LÒ SƯỞI PID</span><span class="text-amber-400 font-bold">MOSFET 25</span></div>
+          <div class="mt-2 flex items-baseline gap-1.5">
+            <span id="valHeaterPct" class="text-3xl font-extrabold text-amber-400">0</span>
+            <span class="text-sm iot-muted">% PWM</span>
+          </div>
+          <div class="w-full bg-slate-800 h-2 rounded-full mt-2.5 overflow-hidden">
+            <div id="barHeaterPct" class="bg-amber-400 h-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 KHỐI ĐIỀU KHIỂN: PID AUTO-TUNE + SETPOINT + CÔNG TẮC AUTO/MANUAL -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <!-- Khối 1: Auto-Tune PID + So sánh hệ số cũ/mới + Thanh trạng thái -->
+        <div class="iot-card p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-sm">🧠 Tự động Chỉnh Hệ số PID</h3>
+            <span id="tuneStatusBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400">PID Sẵn sàng</span>
+          </div>
+          <p class="text-xs iot-muted">Dò tự động Ziegler–Nichols hoặc chỉnh tay giảm vọt lố:</p>
+
+          <!-- Hiển thị hệ số trước đó -->
+          <div id="oldPidBox" class="hidden p-2.5 rounded-xl iot-input text-xs flex justify-between items-center">
+            <span class="iot-muted">🕒 <b>Hệ số trước đó:</b></span>
+            <span id="oldPidVals" class="text-amber-400 font-mono font-bold">Kp: - | Ki: - | Kd: -</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <div class="iot-input p-2.5">
+              <label class="text-[11px] iot-muted block">Hệ số Kp</label>
+              <input id="inpKp" type="number" step="0.1" value="60.0" class="w-full font-extrabold text-sm bg-transparent text-amber-400 focus:outline-none mt-0.5" />
+            </div>
+            <div class="iot-input p-2.5">
+              <label class="text-[11px] iot-muted block">Hệ số Ki</label>
+              <input id="inpKi" type="number" step="0.05" value="1.20" class="w-full font-extrabold text-sm bg-transparent text-emerald-400 focus:outline-none mt-0.5" />
+            </div>
+            <div class="iot-input p-2.5">
+              <label class="text-[11px] iot-muted block">Hệ số Kd</label>
+              <input id="inpKd" type="number" step="1" value="3500" class="w-full font-extrabold text-sm bg-transparent text-blue-400 focus:outline-none mt-0.5" />
+            </div>
+          </div>
+
+          <!-- Thanh trạng thái ước tính tiến độ dò PID -->
+          <div id="tuneProgressBox" class="hidden p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-xs text-amber-300 space-y-2">
+            <div class="flex justify-between items-center font-bold">
+              <span id="tuneStepTitle">⚡ Đang thực hiện Dò PID...</span>
+              <span id="tunePercent">0%</span>
+            </div>
+            <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
+              <div id="tuneBar" class="bg-amber-400 h-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <div class="text-[11px] flex justify-between opacity-90">
+              <span id="tuneDesc">Đang kích thích MOSFET đo dao động...</span>
+              <span id="tuneTimeLeft">Chu kỳ 1/2</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button onclick="startAutoTunePID()" id="btnAutoTune" class="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition">
+              ⚡ Dò PID Tự động
+            </button>
+            <button onclick="saveManualPID()" class="iot-btn-primary py-2.5 px-3 rounded-xl text-xs">
+              💾 Lưu Kp, Ki, Kd
+            </button>
+          </div>
+        </div>
+
+        <!-- Khối 2: Cài đặt Nhiệt độ Setpoint & Ngưỡng tưới -->
+        <div class="iot-card p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-sm">🎛️ Cài đặt Ngưỡng Nhiệt & Tưới</h3>
+            <button onclick="switchTab('plants')" class="text-xs text-emerald-400 hover:underline">Chọn kiểu cây ➔</button>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="iot-muted">Nhiệt độ mục tiêu (Setpoint)</span>
+              <b id="sliderSpVal" class="text-amber-400">32.0 °C</b>
+            </div>
+            <input id="sliderSp" type="range" min="18" max="45" step="0.5" value="32" oninput="document.getElementById('sliderSpVal').innerText = this.value + ' °C'" class="w-full accent-emerald-500" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1.5">
+              <span class="iot-muted">Tưới khi độ ẩm đất dưới</span>
+              <b id="sliderSoilVal" class="text-emerald-400">40 %</b>
+            </div>
+            <input id="sliderSoil" type="range" min="5" max="90" step="1" value="40" oninput="document.getElementById('sliderSoilVal').innerText = this.value + ' %'" class="w-full accent-emerald-500" />
+          </div>
+
+          <button onclick="applyThresholdsToEsp()" class="iot-btn-primary w-full py-2.5 rounded-xl text-xs">
+            🚀 Gửi Ngưỡng Cài Đặt Xuống ESP32
+          </button>
+        </div>
+
+        <!-- Khối 3: Công tắc AUTO / MANUAL (Chống nhảy Relay) -->
+        <div class="iot-card p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-sm">⚡ Điều khiển Thiết bị</h3>
+            <div class="iot-input flex p-1 rounded-xl text-xs font-bold">
+              <button id="modeAutoBtn" onclick="setMode('auto')" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white transition">AUTO</button>
+              <button id="modeManBtn" onclick="setMode('manual')" class="px-2.5 py-1 rounded-lg iot-muted transition">MANUAL</button>
+            </div>
+          </div>
+
+          <div class="iot-input flex items-center justify-between p-3">
+            <div>
+              <div class="text-xs font-bold">🔥 Lò sưởi PID (MOSFET 25)</div>
+              <div class="text-[11px] iot-muted">Điều xung PWM ổn định nhiệt</div>
+            </div>
+            <button id="btnToggleHeater" onclick="toggleHeater()" class="px-3.5 py-2 rounded-xl text-xs font-bold transition">ĐANG BẬT</button>
+          </div>
+
+          <div class="iot-input flex items-center justify-between p-3">
+            <div>
+              <div class="text-xs font-bold">💧 Máy bơm tưới (Relay 26)</div>
+              <div id="pumpModeHint" class="text-[11px] iot-muted">Chế độ tự động theo ẩm đất</div>
+            </div>
+            <button id="btnTogglePump" onclick="togglePump()" class="px-3.5 py-2 rounded-xl text-xs font-bold transition">ĐANG TẮT</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- BIỂU ĐỒ THỜI GIAN THỰC -->
+      <div class="iot-card p-5">
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+          <div>
+            <h3 class="font-bold text-sm">📊 Biểu đồ Theo dõi Thời gian thực (Nhiệt độ + Setpoint + Ẩm Đất + Ẩm KK)</h3>
+            <p class="text-xs iot-muted">Trục trái: Nhiệt độ (°C) · Trục phải: Độ ẩm (%)</p>
+          </div>
+        </div>
+        <div class="h-72">
+          <canvas id="realtimeChart"></canvas>
+        </div>
+      </div>
+
     </div>
 
-    <script>
-        let myPlants = JSON.parse(localStorage.getItem('iotfarm_custom_plants') || '[]');
+    <!-- ==================== TAB 2: KIỂU CÂY (GIỐNG HÌNH 2) ==================== -->
+    <div id="tab-plants" class="hidden space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-extrabold">Kiểu cây</h1>
+          <p class="text-xs iot-muted mt-1">Mỗi kiểu cây là một bộ ngưỡng tưới và nhiệt độ ủ tối ưu.</p>
+        </div>
+        <button onclick="createNewCustomPlant()" class="iot-btn-primary px-4 py-2.5 rounded-full text-xs flex items-center gap-1.5">
+          <span>＋</span> Kiểu cây mới
+        </button>
+      </div>
 
-        function checkAuth() {
-            const user = localStorage.getItem('iotfarm_user');
-            if(user) { document.getElementById('auth-container').classList.add('hidden'); renderMyPlants(); }
-            else { document.getElementById('auth-container').classList.remove('hidden'); }
+      <!-- Mục: Của bạn -->
+      <div class="space-y-3">
+        <h2 class="text-base font-bold">Của bạn</h2>
+        <div id="myPlantsEmpty" class="text-xs iot-muted">
+          Bạn chưa tạo kiểu cây nào. Có thể chép một mẫu bên dưới bằng nút <b>Tạo bản của tôi</b>.
+        </div>
+        <div id="myPlantsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+      </div>
+
+      <!-- Mục: Mẫu có sẵn (Cà chua, Dưa leo, Rau cải) -->
+      <div class="space-y-3 pt-2">
+        <h2 class="text-base font-bold">Mẫu có sẵn</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+          <!-- Cà chua -->
+          <div class="iot-card p-5 space-y-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl iot-input flex items-center justify-center text-xl">🍅</div>
+              <div>
+                <div class="font-bold text-sm">Cà chua</div>
+                <div class="text-[11px] iot-muted">Mẫu có sẵn</div>
+              </div>
+            </div>
+            <p class="text-xs iot-muted">Tránh để đất quá ướt lâu dễ nứt quả, thối rễ.</p>
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between"><span class="iot-muted">🌡️ Nhiệt độ</span><b>20–30°C (SP: 26°C)</b></div>
+              <div class="flex justify-between"><span class="iot-muted">💧 Ẩm không khí</span><b>55–75%</b></div>
+              <div class="flex justify-between"><span class="iot-muted">💧 Tưới khi đất</span><b>dưới 45%, dừng ở 68%</b></div>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button onclick="copyPlantPreset('Cà chua', '🍅', 26, 45, '55–75%')" class="iot-input px-3 py-2 rounded-xl text-xs font-semibold hover:border-emerald-500 transition">📋 Tạo bản của tôi</button>
+              <button onclick="applyPlantPreset('Cà chua', 26, 45)" class="iot-btn-primary px-3 py-2 rounded-xl text-xs">Áp dụng ESP32</button>
+            </div>
+          </div>
+
+          <!-- Dưa leo -->
+          <div class="iot-card p-5 space-y-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl iot-input flex items-center justify-center text-xl">🥒</div>
+              <div>
+                <div class="font-bold text-sm">Dưa leo</div>
+                <div class="text-[11px] iot-muted">Mẫu có sẵn</div>
+              </div>
+            </div>
+            <p class="text-xs iot-muted">Cần nhiều nước giai đoạn ra quả.</p>
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between"><span class="iot-muted">🌡️ Nhiệt độ</span><b>20–32°C (SP: 28°C)</b></div>
+              <div class="flex justify-between"><span class="iot-muted">💧 Ẩm không khí</span><b>60–85%</b></div>
+              <div class="flex justify-between"><span class="iot-muted">💧 Tưới khi đất</span><b>dưới 55%, dừng ở 78%</b></div>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button onclick="copyPlantPreset('Dưa leo', '🥒', 28, 55, '60–85%')" class="iot-input px-3 py-2 rounded-xl text-xs font-semibold hover:border-emerald-500 transition">📋 Tạo bản của tôi</button>
+              <button onclick="applyPlantPreset('Dưa leo', 28, 55)" class="iot-btn-primary px-3 py-2 rounded-xl text-xs">Áp dụng ESP32</button>
+            </div>
+          </div>
+
+          <!-- Rau cải -->
+          <div class="iot-card p-5 space-y-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl iot-input flex items-center justify-center text-xl">🥬</div>
+              <div>
+                <div class="font-bold text-sm">Rau cải</div>
+                <div class="text-[11px] iot-muted">Mẫu có sẵn</div>
+              </div>
+            </div>
+            <p class="text-xs iot-muted">Cải ngọt, cải xanh, cải bẹ – ưa ẩm, tưới đều.</p>
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between"><span class="iot-muted">🌡️ Nhiệt độ</span><b>18–30°C (SP: 25°C)</b></div>
+              <div class="flex justify-between"><span class="iot-muted">💧 Ẩm không khí</span><b>60–85%</b></div>
+              <div class="flex justify-between"><span class="iot-muted">💧 Tưới khi đất</span><b>dưới 50%, dừng ở 75%</b></div>
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button onclick="copyPlantPreset('Rau cải', '🥬', 25, 50, '60–85%')" class="iot-input px-3 py-2 rounded-xl text-xs font-semibold hover:border-emerald-500 transition">📋 Tạo bản của tôi</button>
+              <button onclick="applyPlantPreset('Rau cải', 25, 50)" class="iot-btn-primary px-3 py-2 rounded-xl text-xs">Áp dụng ESP32</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 3: THỜI TIẾT ==================== -->
+    <div id="tab-weather" class="hidden space-y-6">
+      <div>
+        <h1 class="text-2xl font-extrabold">Thời tiết & Môi trường Ươm</h1>
+        <p class="text-xs iot-muted mt-1">So sánh nhiệt độ/độ ẩm ngoài trời (TP.HCM) với bên trong buồng ươm ESP32.</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div class="iot-card p-6 space-y-3">
+          <div class="text-xs font-bold text-emerald-400">⛅ NGOÀI TRỜI (TP. HỒ CHÍ MINH)</div>
+          <div class="text-4xl font-extrabold" id="outdoorTemp">31.0 °C</div>
+          <p class="text-xs iot-muted">Độ ẩm ngoài trời: <b id="outdoorHum">70%</b> · Trời có mây, gió nhẹ</p>
+        </div>
+        <div class="iot-card p-6 space-y-3">
+          <div class="text-xs font-bold text-amber-400">🏠 TRONG BUỒNG ƯƠM (ESP32 DHT)</div>
+          <div class="text-4xl font-extrabold" id="indoorWeatherTemp">32.0 °C</div>
+          <p class="text-xs iot-muted">Độ ẩm buồng ươm: <b id="indoorWeatherHum">65%</b> · Công suất sưởi: <b id="indoorWeatherPwm">0%</b></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 4: TÀI KHOẢN (GIỐNG HÌNH 3 & 4) ==================== -->
+    <div id="tab-account" class="hidden space-y-6 max-w-4xl">
+      <div>
+        <h1 class="text-2xl font-extrabold">Tài khoản</h1>
+        <p class="text-xs iot-muted mt-1"><span id="accHeaderEmail">buitrangiahung2004@gmail.com</span> · Người dùng</p>
+      </div>
+
+      <!-- Ngôn ngữ -->
+      <div class="iot-card p-5 flex items-center justify-between">
+        <span class="font-bold text-sm">Ngôn ngữ</span>
+        <div class="iot-input p-1 flex rounded-full text-xs font-bold">
+          <button onclick="setLang('vi')" id="btnLangVi" class="px-3.5 py-1.5 rounded-full bg-slate-800 text-white">Tiếng Việt</button>
+          <button onclick="setLang('en')" id="btnLangEn" class="px-3.5 py-1.5 rounded-full iot-muted">English</button>
+        </div>
+      </div>
+
+      <!-- Giao diện (8 Bộ giao diện + Sáng/Tối + Màu chủ đạo) -->
+      <div class="iot-card p-6 space-y-5">
+        <div class="flex items-center justify-between">
+          <h2 class="font-bold text-base">Giao diện</h2>
+          <button onclick="resetThemeDefault()" class="text-xs iot-muted hover:text-white">↺ Khôi phục mặc định</button>
+        </div>
+
+        <div class="space-y-2">
+          <div class="text-xs font-bold iot-muted">Bộ giao diện</div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <button onclick="applyPresetTheme('default')" class="iot-input p-3 text-left hover:border-emerald-400 transition">
+              <div class="h-10 rounded bg-[#141d19] border border-slate-700 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-emerald-400"></span></div>
+              <b>Mặc định</b>
+            </button>
+            <button onclick="applyPresetTheme('forest')" class="iot-input p-3 text-left hover:border-emerald-400 transition">
+              <div class="h-10 rounded bg-[#0b1911] border border-emerald-900 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-green-400"></span></div>
+              <b>Rừng đêm</b>
+            </button>
+            <button onclick="applyPresetTheme('blue')" class="iot-input p-3 text-left hover:border-blue-400 transition">
+              <div class="h-10 rounded bg-sky-50 border border-sky-300 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-blue-600"></span></div>
+              <b>Biển xanh</b>
+            </button>
+            <button onclick="applyPresetTheme('ocean')" class="iot-input p-3 text-left hover:border-cyan-400 transition">
+              <div class="h-10 rounded bg-[#0c192c] border border-cyan-800 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-cyan-400"></span></div>
+              <b>Đại dương</b>
+            </button>
+            <button onclick="applyPresetTheme('oled')" class="iot-input p-3 text-left hover:border-emerald-400 transition">
+              <div class="h-10 rounded bg-black border border-neutral-800 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-teal-400"></span></div>
+              <b>Đen OLED</b>
+            </button>
+            <button onclick="applyPresetTheme('sakura')" class="iot-input p-3 text-left hover:border-pink-400 transition">
+              <div class="h-10 rounded bg-rose-50 border border-rose-200 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-rose-500"></span></div>
+              <b>Hoa anh đào</b>
+            </button>
+            <button onclick="applyPresetTheme('lavender')" class="iot-input p-3 text-left hover:border-purple-400 transition">
+              <div class="h-10 rounded bg-purple-50 border border-purple-200 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-purple-600"></span></div>
+              <b>Oải hương</b>
+            </button>
+            <button onclick="applyPresetTheme('sunset')" class="iot-input p-3 text-left hover:border-amber-400 transition">
+              <div class="h-10 rounded bg-[#1f1610] border border-amber-900 mb-2 flex items-end justify-end p-1.5"><span class="w-6 h-1.5 rounded bg-amber-500"></span></div>
+              <b>Hoàng hôn</b>
+            </button>
+          </div>
+        </div>
+
+        <!-- Chế độ Sáng / Tối -->
+        <div class="space-y-2">
+          <div class="text-xs font-bold iot-muted">Chế độ</div>
+          <div class="inline-flex iot-input p-1 rounded-full text-xs font-bold gap-1">
+            <button onclick="setColorMode('light')" id="modeLightBtn" class="px-4 py-1.5 rounded-full iot-muted">☀️ Sáng</button>
+            <button onclick="setColorMode('dark')" id="modeDarkBtn" class="px-4 py-1.5 rounded-full bg-slate-800 text-white">🌙 Tối</button>
+          </div>
+        </div>
+
+        <!-- Màu chủ đạo -->
+        <div class="space-y-2">
+          <div class="text-xs font-bold iot-muted">Màu chủ đạo</div>
+          <div class="flex flex-wrap gap-2.5">
+            <button onclick="setAccentColor('#52b788')" class="w-7 h-7 rounded-full bg-[#52b788] ring-2 ring-offset-2 ring-offset-slate-900 ring-white"></button>
+            <button onclick="setAccentColor('#2dd4bf')" class="w-7 h-7 rounded-full bg-[#2dd4bf]"></button>
+            <button onclick="setAccentColor('#38bdf8')" class="w-7 h-7 rounded-full bg-[#38bdf8]"></button>
+            <button onclick="setAccentColor('#818cf8')" class="w-7 h-7 rounded-full bg-[#818cf8]"></button>
+            <button onclick="setAccentColor('#f472b6')" class="w-7 h-7 rounded-full bg-[#f472b6]"></button>
+            <button onclick="setAccentColor('#fb923c')" class="w-7 h-7 rounded-full bg-[#fb923c]"></button>
+            <button onclick="setAccentColor('#facc15')" class="w-7 h-7 rounded-full bg-[#facc15]"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thông tin cá nhân (Giống Hình 4) -->
+      <div class="iot-card p-6 space-y-4">
+        <div>
+          <h2 class="font-bold text-base">Thông tin cá nhân</h2>
+          <p class="text-xs iot-muted mt-0.5">Tên hiển thị trong nhật ký khi bạn điều khiển thiết bị.</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div class="space-y-1.5">
+            <label class="iot-muted font-semibold">Họ tên</label>
+            <input id="profName" type="text" value="Bùi Trần Gia Hưng" class="iot-input w-full px-3.5 py-2.5 text-sm" />
+          </div>
+          <div class="space-y-1.5">
+            <label class="iot-muted font-semibold">Số điện thoại</label>
+            <input id="profPhone" type="text" value="0909581884" class="iot-input w-full px-3.5 py-2.5 text-sm" />
+          </div>
+        </div>
+        <button onclick="saveProfileInfo()" class="iot-btn-primary px-5 py-2.5 rounded-full text-xs">Lưu thông tin</button>
+      </div>
+
+      <!-- Đổi mật khẩu -->
+      <div class="iot-card p-6 space-y-4">
+        <h2 class="font-bold text-base">Đổi mật khẩu</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div class="space-y-1.5">
+            <label class="iot-muted font-semibold">Mật khẩu hiện tại</label>
+            <input type="password" placeholder="••••••" class="iot-input w-full px-3.5 py-2.5 text-sm" />
+          </div>
+          <div class="space-y-1.5">
+            <label class="iot-muted font-semibold">Mật khẩu mới</label>
+            <input type="password" placeholder="Tối thiểu 6 ký tự" class="iot-input w-full px-3.5 py-2.5 text-sm" />
+          </div>
+        </div>
+        <button onclick="alert('Đã cập nhật mật khẩu thành công!')" class="iot-btn-primary px-5 py-2.5 rounded-full text-xs">Đổi mật khẩu</button>
+      </div>
+
+      <!-- Đăng xuất -->
+      <div class="iot-card p-6 flex items-center justify-between">
+        <div>
+          <h2 class="font-bold text-base">Đăng xuất</h2>
+          <p class="text-xs iot-muted mt-0.5">Thoát tài khoản trên trình duyệt này.</p>
+        </div>
+        <button onclick="alert('Đã đăng xuất phiên làm việc!')" class="text-xs font-bold text-orange-400 hover:underline flex items-center gap-1.5">
+          <span>➔</span> Đăng xuất
+        </button>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- MODAL CẤU HÌNH KẾT NỐI ESP32 -->
+  <div id="connModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/75 p-4">
+    <div class="iot-card max-w-md w-full p-6 space-y-4 text-xs">
+      <h3 class="font-bold text-base">🔌 Cấu hình Kết nối Mạch ESP32</h3>
+      <select id="connModeSelect" class="iot-input w-full p-2.5">
+        <option value="local">1. Kết nối IP ESP32 (Cùng mạng Wi-Fi LAN)</option>
+        <option value="sim">2. Chế độ Mô phỏng (Test nhanh không cần mạch)</option>
+      </select>
+      <div class="space-y-1">
+        <label class="font-semibold block iot-muted">Địa chỉ IP của ESP32:</label>
+        <input id="espIpInput" type="text" value="192.168.100.91" class="iot-input w-full p-2.5" />
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeConnModal()" class="px-4 py-2 rounded-xl iot-input">Đóng</button>
+        <button onclick="saveConnConfig()" class="iot-btn-primary px-4 py-2 rounded-xl">Lưu & Kết nối</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ================= ĐIỀU HƯỚNG TAB SIDEBAR =================
+    function switchTab(tab) {
+      ['dashboard', 'plants', 'weather', 'account'].forEach(t => {
+        document.getElementById('tab-' + t).classList.toggle('hidden', t !== tab);
+        const nav = document.getElementById('nav-' + t);
+        if (t === tab) {
+          nav.classList.add('active');
+          nav.classList.remove('iot-muted');
+        } else {
+          nav.classList.remove('active');
+          nav.classList.add('iot-muted');
+        }
+      });
+    }
+
+    // ================= GIAO DIỆN SÁNG / TỐI & BỘ CHỦ ĐỀ =================
+    function setColorMode(mode) {
+      const isDark = (mode === 'dark');
+      document.documentElement.classList.toggle('dark', isDark);
+      document.getElementById('modeDarkBtn').className = isDark ? 'px-4 py-1.5 rounded-full bg-slate-800 text-white' : 'px-4 py-1.5 rounded-full iot-muted';
+      document.getElementById('modeLightBtn').className = !isDark ? 'px-4 py-1.5 rounded-full bg-emerald-600 text-white' : 'px-4 py-1.5 rounded-full iot-muted';
+      localStorage.setItem('iotfarm_mode', mode);
+    }
+
+    function quickToggleDark() {
+      const isDark = document.documentElement.classList.contains('dark');
+      setColorMode(isDark ? 'light' : 'dark');
+    }
+
+    function setAccentColor(hex) {
+      document.documentElement.style.setProperty('--accent', hex);
+      localStorage.setItem('iotfarm_accent', hex);
+    }
+
+    function applyPresetTheme(name) {
+      const presets = {
+        default:  { dark: true,  bg: '#0a0f0d', card: '#141d19', accent: '#52b788' },
+        forest:   { dark: true,  bg: '#06110b', card: '#0d2116', accent: '#4ade80' },
+        blue:     { dark: false, bg: '#f0f9ff', card: '#ffffff', accent: '#2563eb' },
+        ocean:    { dark: true,  bg: '#071324', card: '#0f223d', accent: '#22d3ee' },
+        oled:     { dark: true,  bg: '#000000', card: '#0a0a0a', accent: '#2dd4bf' },
+        sakura:   { dark: false, bg: '#fff1f2', card: '#ffffff', accent: '#e11d48' },
+        lavender: { dark: false, bg: '#faf5ff', card: '#ffffff', accent: '#9333ea' },
+        sunset:   { dark: true,  bg: '#18100c', card: '#261913', accent: '#f59e0b' }
+      };
+      const p = presets[name] || presets.default;
+      setColorMode(p.dark ? 'dark' : 'light');
+      document.documentElement.style.setProperty('--bg-main', p.bg);
+      document.documentElement.style.setProperty('--bg-card', p.card);
+      setAccentColor(p.accent);
+    }
+
+    function resetThemeDefault() {
+      applyPresetTheme('default');
+    }
+
+    // ================= KIỂU CÂY (TẠO BẢN CỦA TÔI & ÁP DỤNG ESP32) =================
+    let myCustomPlants = JSON.parse(localStorage.getItem('iotfarm_my_plants') || '[]');
+
+    function renderMyPlants() {
+      const grid = document.getElementById('myPlantsGrid');
+      const empty = document.getElementById('myPlantsEmpty');
+      if (myCustomPlants.length === 0) {
+        empty.classList.remove('hidden');
+        grid.innerHTML = '';
+        return;
+      }
+      empty.classList.add('hidden');
+      grid.innerHTML = myCustomPlants.map((p, idx) => `
+        <div class="iot-card p-5 space-y-3 border-emerald-500/40">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl iot-input flex items-center justify-center text-lg">${p.icon}</div>
+              <div>
+                <div class="font-bold text-sm">${p.name}</div>
+                <div class="text-[11px] text-emerald-400">Bản của tôi</div>
+              </div>
+            </div>
+            <button onclick="removeMyPlant(${idx})" class="text-xs iot-muted hover:text-rose-400">✕</button>
+          </div>
+          <div class="space-y-1 text-xs">
+            <div class="flex justify-between"><span class="iot-muted">🌡️ Setpoint:</span><b>${p.sp}°C</b></div>
+            <div class="flex justify-between"><span class="iot-muted">💧 Tưới dưới:</span><b>${p.soil}%</b></div>
+          </div>
+          <button onclick="applyPlantPreset('${p.name}', ${p.sp}, ${p.soil})" class="iot-btn-primary w-full py-2 rounded-xl text-xs">
+            🚀 Chạy cấu hình này trên ESP32
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function copyPlantPreset(name, icon, sp, soil, humRange) {
+      myCustomPlants.push({ name, icon, sp, soil, humRange });
+      localStorage.setItem('iotfarm_my_plants', JSON.stringify(myCustomPlants));
+      renderMyPlants();
+    }
+
+    function removeMyPlant(idx) {
+      myCustomPlants.splice(idx, 1);
+      localStorage.setItem('iotfarm_my_plants', JSON.stringify(myCustomPlants));
+      renderMyPlants();
+    }
+
+    function createNewCustomPlant() {
+      const name = prompt('Nhập tên kiểu cây mới (VD: Đậu xanh ủ mầm):', 'Đậu xanh ủ mầm');
+      if (!name) return;
+      const sp = parseFloat(prompt('Nhiệt độ Setpoint (°C):', '32')) || 32;
+      const soil = parseInt(prompt('Ngưỡng độ ẩm đất bật bơm (%):', '45')) || 45;
+      copyPlantPreset(name, '🌱', sp, soil, '60–80%');
+    }
+
+    function applyPlantPreset(name, sp, soil) {
+      document.getElementById('sliderSp').value = sp;
+      document.getElementById('sliderSpVal').innerText = sp + ' °C';
+      document.getElementById('sliderSoil').value = soil;
+      document.getElementById('sliderSoilVal').innerText = soil + ' %';
+      document.getElementById('activePlantBadge').innerText = `${name} (${sp}°C | ${soil}%)`;
+      sendCommand({ setpoint: sp, soilThreshold: soil });
+      switchTab('dashboard');
+    }
+
+    function saveProfileInfo() {
+      const name = document.getElementById('profName').value.trim() || 'Bùi Trần Gia Hưng';
+      document.getElementById('sidebarName').innerText = name;
+      document.getElementById('sidebarAvatar').innerText = name.charAt(0).toUpperCase();
+      alert('Đã lưu thông tin cá nhân!');
+    }
+
+    // ================= TRẠNG THÁI & GIAO TIẾP ESP32 =================
+    let connMode = localStorage.getItem('esp_conn_mode') || 'local';
+    let espIp = localStorage.getItem('esp_ip') || '192.168.100.91';
+    let lastManualActionTime = 0;
+
+    let state = {
+      temp: 32.0, humidity: 65.0, soil: 55,
+      setpoint: 32.0, soilThreshold: 40,
+      heaterON: true, heaterPowerPct: 0,
+      pumpON: false, pumpAuto: true,
+      kp: 60.0, ki: 1.20, kd: 3500,
+      oldKp: null, oldKi: null, oldKd: null,
+      autoTuning: false
+    };
+    let historyLogs = [];
+
+    function openConnModal() {
+      document.getElementById('connModal').classList.replace('hidden', 'flex');
+      document.getElementById('connModeSelect').value = connMode;
+      document.getElementById('espIpInput').value = espIp;
+    }
+    function closeConnModal() { document.getElementById('connModal').classList.replace('flex', 'hidden'); }
+    function saveConnConfig() {
+      connMode = document.getElementById('connModeSelect').value;
+      espIp = document.getElementById('espIpInput').value.trim().replace(/^https?:\/\//, '');
+      localStorage.setItem('esp_conn_mode', connMode);
+      localStorage.setItem('esp_ip', espIp);
+      document.getElementById('connStatusText').innerText = connMode === 'local' ? `ESP32 LAN (${espIp})` : 'Chế độ Mô phỏng';
+      closeConnModal();
+      pollData();
+    }
+
+    // ================= BIỂU ĐỒ THỜI GIAN THỰC =================
+    const ctx = document.getElementById('realtimeChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'Nhiệt độ (°C)', data: [], borderColor: '#f43f5e', borderWidth: 2.5, tension: 0.35, yAxisID: 'yTemp' },
+          { label: 'Setpoint (°C)', data: [], borderColor: '#f59e0b', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, tension: 0.1, yAxisID: 'yTemp' },
+          { label: 'Độ ẩm KK (%)', data: [], borderColor: '#3b82f6', borderWidth: 2, tension: 0.35, yAxisID: 'yHum' },
+          { label: 'Độ ẩm đất (%)', data: [], borderColor: '#10b981', borderWidth: 2, tension: 0.35, yAxisID: 'yHum' }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          yTemp: { type: 'linear', position: 'left', title: { display: true, text: 'Nhiệt độ (°C)', color: '#f43f5e' }, grid: { color: 'rgba(148,163,184,0.1)' } },
+          yHum: { type: 'linear', position: 'right', min: 0, max: 100, title: { display: true, text: 'Độ ẩm (%)', color: '#3b82f6' }, grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+
+    function updateUI() {
+      document.getElementById('valTemp').innerText = Number(state.temp).toFixed(2);
+      document.getElementById('valHum').innerText = Number(state.humidity).toFixed(1);
+      document.getElementById('valSoil').innerText = state.soil;
+      document.getElementById('lblSetpoint').innerText = Number(state.setpoint).toFixed(1) + ' °C';
+      document.getElementById('lblSoilTh').innerText = state.soilThreshold + '%';
+      document.getElementById('valHeaterPct').innerText = state.heaterPowerPct;
+      document.getElementById('barHeaterPct').style.width = state.heaterPowerPct + '%';
+
+      document.getElementById('indoorWeatherTemp').innerText = Number(state.temp).toFixed(1) + ' °C';
+      document.getElementById('indoorWeatherHum').innerText = Number(state.humidity).toFixed(1) + '%';
+      document.getElementById('indoorWeatherPwm').innerText = state.heaterPowerPct + '%';
+
+      if (document.activeElement.tagName !== 'INPUT') {
+        document.getElementById('inpKp').value = state.kp;
+        document.getElementById('inpKi').value = state.ki;
+        document.getElementById('inpKd').value = state.kd;
+      }
+
+      if (state.oldKp !== null) {
+        document.getElementById('oldPidBox').classList.remove('hidden');
+        document.getElementById('oldPidVals').innerText = `Kp: ${state.oldKp} | Ki: ${state.oldKi} | Kd: ${state.oldKd}`;
+      }
+
+      const btnH = document.getElementById('btnToggleHeater');
+      btnH.innerText = state.heaterON ? 'ĐANG BẬT' : 'ĐANG TẮT';
+      btnH.className = state.heaterON
+        ? 'px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 text-slate-950 transition'
+        : 'px-3.5 py-2 rounded-xl text-xs font-bold iot-input iot-muted transition';
+
+      const btnP = document.getElementById('btnTogglePump');
+      btnP.innerText = state.pumpON ? 'ĐANG BẬT' : 'ĐANG TẮT';
+      btnP.className = state.pumpON
+        ? 'px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-500 text-white transition'
+        : 'px-3.5 py-2 rounded-xl text-xs font-bold iot-input iot-muted transition';
+
+      document.getElementById('badgePump').innerText = state.pumpON ? 'Bơm: ĐANG TƯỚI' : 'Bơm: TẮT';
+      document.getElementById('pumpModeHint').innerText = state.pumpAuto ? 'Chế độ tự động theo ẩm đất' : 'Đang điều khiển THỦ CÔNG (Manual)';
+
+      document.getElementById('modeAutoBtn').className = state.pumpAuto ? 'px-2.5 py-1 rounded-lg bg-emerald-600 text-white transition' : 'px-2.5 py-1 rounded-lg iot-muted transition';
+      document.getElementById('modeManBtn').className = !state.pumpAuto ? 'px-2.5 py-1 rounded-lg bg-blue-600 text-white transition' : 'px-2.5 py-1 rounded-lg iot-muted transition';
+
+      const nowStr = new Date().toLocaleTimeString('vi-VN');
+      if (chart.data.labels.length > 25) {
+        chart.data.labels.shift();
+        chart.data.datasets.forEach(d => d.data.shift());
+      }
+      chart.data.labels.push(nowStr);
+      chart.data.datasets[0].data.push(state.temp);
+      chart.data.datasets[1].data.push(state.setpoint);
+      chart.data.datasets[2].data.push(state.humidity);
+      chart.data.datasets[3].data.push(state.soil);
+      chart.update();
+
+      historyLogs.push({ time: nowStr, ...state });
+    }
+
+    async function sendCommand(params) {
+      lastManualActionTime = Date.now();
+      Object.assign(state, params);
+      updateUI();
+      if (connMode === 'local') {
+        const qs = new URLSearchParams(params).toString();
+        try { await fetch(`http://${espIp}/api/control?${qs}`); } catch (e) {}
+      }
+    }
+
+    // ================= AUTO-TUNE PID KÈM THANH TRẠNG THÁI =================
+    let tuneTimer = null;
+    function startAutoTunePID() {
+      if (state.autoTuning) return;
+      state.oldKp = state.kp; state.oldKi = state.ki; state.oldKd = state.kd;
+      state.autoTuning = true;
+
+      const box = document.getElementById('tuneProgressBox');
+      const bar = document.getElementById('tuneBar');
+      const pctTxt = document.getElementById('tunePercent');
+      const stepTitle = document.getElementById('tuneStepTitle');
+      const desc = document.getElementById('tuneDesc');
+      const badge = document.getElementById('tuneStatusBadge');
+
+      box.classList.remove('hidden');
+      badge.innerText = 'Đang Dò PID...';
+      badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-400 animate-pulse';
+
+      let p = 0;
+      clearInterval(tuneTimer);
+      tuneTimer = setInterval(() => {
+        p += (connMode === 'sim' ? 4 : 1);
+        if (p > 95 && connMode !== 'sim' && state.autoTuning) p = 95;
+        bar.style.width = p + '%';
+        pctTxt.innerText = p + '%';
+
+        if (p < 35) {
+          stepTitle.innerText = '⚡ Giai đoạn 1/3: Kích nhiệt độ đỉnh';
+          desc.innerText = 'Đóng MOSFET 100% vượt ngưỡng Setpoint...';
+        } else if (p < 75) {
+          stepTitle.innerText = '⚡ Giai đoạn 2/3: Đo biên độ & Chu kỳ';
+          desc.innerText = 'Chờ nhiệt độ hạ qua Setpoint...';
+        } else {
+          stepTitle.innerText = '⚡ Giai đoạn 3/3: Nội suy Kp, Ki, Kd';
+          desc.innerText = 'Tính hệ số tối ưu chống vọt lố...';
         }
 
-        function toggleAuthMode(mode) {
-            if(mode === 'register') {
-                document.getElementById('form-login').classList.add('hidden');
-                document.getElementById('form-register').classList.remove('hidden');
-                document.getElementById('auth-title').innerText = "Tạo tài khoản IoTFarm";
-            } else {
-                document.getElementById('form-register').classList.add('hidden');
-                document.getElementById('form-login').classList.remove('hidden');
-                document.getElementById('auth-title').innerText = "Đăng nhập IoTFarm";
-            }
-        }
+        if (p >= 100) finishAutoTuneUI();
+      }, 200);
 
-        function handleLogin() {
-            const email = document.getElementById('login-email').value;
-            if(!email) { alert("Vui lòng nhập tài khoản!"); return; }
-            localStorage.setItem('iotfarm_user', email);
-            checkAuth();
-        }
+      if (connMode !== 'sim') sendCommand({ autotune: 1, startAutoTune: true });
+    }
 
-        function handleRegister() {
-            const name = document.getElementById('reg-name').value;
-            const email = document.getElementById('reg-email').value;
-            if(!name || !email) { alert("Vui lòng điền thông tin!"); return; }
-            localStorage.setItem('iotfarm_user', email);
-            alert("Tạo tài khoản thành công!");
-            checkAuth();
-        }
+    function finishAutoTuneUI() {
+      clearInterval(tuneTimer);
+      state.autoTuning = false;
+      if (connMode === 'sim') {
+        state.kp = +(58 + Math.random() * 12).toFixed(1);
+        state.ki = +(1.1 + Math.random() * 0.3).toFixed(2);
+        state.kd = Math.round(3300 + Math.random() * 300);
+      }
+      document.getElementById('tuneProgressBox').classList.add('hidden');
+      const badge = document.getElementById('tuneStatusBadge');
+      badge.innerText = 'Đã Cập Nhật PID Mới';
+      badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400';
+      updateUI();
+    }
 
-        function logout() { localStorage.removeItem('iotfarm_user'); checkAuth(); }
+    function saveManualPID() {
+      const kp = parseFloat(document.getElementById('inpKp').value);
+      const ki = parseFloat(document.getElementById('inpKi').value);
+      const kd = parseFloat(document.getElementById('inpKd').value);
+      state.oldKp = state.kp; state.oldKi = state.ki; state.oldKd = state.kd;
+      sendCommand({ kp, ki, kd });
+      alert(`Đã lưu hệ số PID mới: Kp=${kp}, Ki=${ki}, Kd=${kd}`);
+    }
 
-        function switchTab(tabId) {
-            document.querySelectorAll('main section').forEach(sec => sec.classList.add('hidden'));
-            document.getElementById('sec-' + tabId).classList.remove('hidden');
-            document.querySelectorAll('aside nav a').forEach(a => a.classList.remove('bg-emerald-500/10', 'text-emerald-400'));
-            event.currentTarget.classList.add('bg-emerald-500/10', 'text-emerald-400');
-        }
+    function setMode(m) { sendCommand({ pumpAuto: m === 'auto' ? 1 : 0 }); }
+    function toggleHeater() { sendCommand({ heater: !state.heaterON ? 1 : 0, heaterON: !state.heaterON }); }
+    function togglePump() { sendCommand({ pumpAuto: 0, pump: !state.pumpON ? 1 : 0, pumpON: !state.pumpON }); }
+    function applyThresholdsToEsp() {
+      const sp = parseFloat(document.getElementById('sliderSp').value);
+      const st = parseInt(document.getElementById('sliderSoil').value);
+      sendCommand({ setpoint: sp, soilThreshold: st });
+    }
 
-        function changeLanguage(lang) {
-            alert(lang === 'en' ? "Language changed to English!" : "Đã chuyển sang Tiếng Việt!");
-        }
+    async function pollData() {
+      const ignoreOverwrite = (Date.now() - lastManualActionTime < 3000);
+      if (connMode === 'local') {
+        try {
+          const res = await fetch(`http://${espIp}/api/sensors`);
+          const data = await res.json();
+          const wasTuning = state.autoTuning;
+          if (ignoreOverwrite) {
+            delete data.pumpON; delete data.pumpAuto; delete data.heaterON;
+          }
+          Object.assign(state, data);
+          if (wasTuning && data.autoTuning === false) finishAutoTuneUI();
+        } catch (e) {}
+      } else {
+        const err = state.setpoint - state.temp;
+        state.heaterPowerPct = state.heaterON ? Math.min(100, Math.max(0, Math.round(err * 30))) : 0;
+        state.temp = +(state.temp + (state.heaterON ? err * 0.1 : -0.05) + (Math.random() - 0.5) * 0.12).toFixed(2);
+        state.humidity = +(65 + Math.sin(Date.now() / 6000) * 1.5).toFixed(1);
+        if (state.pumpAuto) state.pumpON = state.soil < state.soilThreshold;
+      }
+      updateUI();
+    }
 
-        function openNewPlantModal() { document.getElementById('plant-modal').classList.replace('hidden', 'flex'); }
-        function closeNewPlantModal() { document.getElementById('plant-modal').classList.replace('flex', 'hidden'); }
+    function exportCSV() {
+      let csv = 'ThoiGian,NhietDo(C),Setpoint(C),DoAmKK(%),DoAmDat(%),CongSuatPID(%),Kp,Ki,Kd\n';
+      historyLogs.forEach(r => {
+        csv += `${r.time},${r.temp},${r.setpoint},${r.humidity},${r.soil},${r.heaterPowerPct},${r.kp},${r.ki},${r.kd}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'BaoCao_IoTFarm_ESP32.csv';
+      a.click();
+    }
 
-        function saveNewPlant() {
-            const name = document.getElementById('new-name').value.trim();
-            const icon = document.getElementById('new-name').value.trim() || '🍓';
-            const sp = document.getElementById('new-sp').value;
-            const soil = document.getElementById('new-soil').value;
-            if(!name) { alert('Nhập tên cây!'); return; }
-            myPlants.push({ name, icon, sp, soil });
-            localStorage.setItem('iotfarm_custom_plants', JSON.stringify(myPlants));
-            renderMyPlants();
-            closeNewPlantModal();
-        }
-
-        function renderMyPlants() {
-            const container = document.getElementById('my-plants-container');
-            if(myPlants.length === 0) { container.innerHTML = ''; return; }
-            container.innerHTML = myPlants.map((p, idx) => `
-                <div class="bg-gray-900 border border-gray-800 p-6 rounded-2xl space-y-3 relative">
-                    <button onclick="myPlants.splice(${idx},1);localStorage.setItem('iotfarm_custom_plants',JSON.stringify(myPlants));renderMyPlants();" class="absolute top-4 right-4 text-xs text-red-400">✕</button>
-                    <div class="text-2xl">${p.icon} ${p.name}</div>
-                    <div class="text-xs text-gray-400 space-y-1"><div>Setpoint: <b>${p.sp}°C</b></div><div>Tưới đất dưới: <b>${p.soil}%</b></div></div>
-                    <button onclick="applyPlant('${p.name}', ${p.sp}, ${p.soil})" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-xs font-bold transition mt-2">Áp dụng ESP32</button>
-                </div>
-            `).join('');
-        }
-
-        function applyPlant(name, sp, soil) {
-            alert(`Đã áp dụng cấu hình "${name}" (Setpoint: ${sp}°C, Tưới dưới: ${soil}%) xuống mạch ESP32!`);
-            switchTab('dashboard');
-        }
-
-        function updateWeather(prov) {
-            const d = { 'Hồ Chí Minh': '31.5°C', 'Hà Nội': '25.0°C', 'Đà Nẵng': '28.0°C', 'Cần Thơ': '30.0°C', 'Hải Phòng': '24.5°C', 'Lâm Đồng': '19.0°C' };
-            document.getElementById('w-loc').innerText = prov;
-            document.getElementById('w-temp').innerText = d[prov] || '28.0°C';
-        }
-
-        // Khởi tạo Biểu đồ Chart.js
-        const ctx = document.getElementById('realtimeChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['00:00', '00:05', '00:10', '00:15', '00:20'],
-                datasets: [
-                    { label: 'Nhiệt độ (°C)', data: [31.2, 31.5, 31.8, 32.0, 32.0], borderColor: '#f43f5e', tension: 0.3 },
-                    { label: 'Độ ẩm KK (%)', data: [68, 67, 66, 65, 65], borderColor: '#3b82f6', tension: 0.3 },
-                    { label: 'Độ ẩm đất (%)', data: [58, 57, 56, 55, 55], borderColor: '#10b981', tension: 0.3 }
-                ]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
-
-        function toggleDevice(type) {
-            if(type === 'heater') {
-                const btn = document.getElementById('btn-heater');
-                const on = btn.innerText.includes('BẬT');
-                btn.innerText = on ? 'ĐANG TẮT' : 'ĐANG BẬT';
-                btn.className = on ? 'px-3 py-1.5 rounded-lg font-bold bg-gray-800 text-gray-400' : 'px-3 py-1.5 rounded-lg font-bold bg-amber-500 text-gray-950';
-            } else {
-                const btn = document.getElementById('btn-pump');
-                const on = btn.innerText.includes('BẬT');
-                btn.innerText = on ? 'ĐANG TƯỚI' : 'ĐANG TẮT';
-                btn.className = on ? 'px-3 py-1.5 rounded-lg font-bold bg-blue-500 text-white' : 'px-3 py-1.5 rounded-lg font-bold bg-gray-800 text-gray-400';
-                document.getElementById('badge-pump').innerText = on ? 'Bơm: ĐANG TƯỚI' : 'Bơm: TẮT';
-            }
-        }
-
-        window.onload = function() {
-            checkAuth();
-            renderMyPlants();
-        };
-    </script>
+    renderMyPlants();
+    setInterval(pollData, 2000);
+    pollData();
+  </script>
 </body>
 </html>
