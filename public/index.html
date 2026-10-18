@@ -210,6 +210,7 @@
     .tag.ok { background: var(--accent-soft); color: var(--accent-text); }
     .tag.warn { background: var(--warn-soft); color: var(--warn); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
+    .dot.warn { background: #e0a21c; }
     .dot.on { background: #3fbf72; box-shadow: 0 0 0 3px color-mix(in srgb, #3fbf72 25%, transparent); }
 
     .kv { display: grid; grid-template-columns: max-content 1fr; gap: 10px 24px; font-size: var(--t-sm); margin: 0; }
@@ -582,7 +583,7 @@
             <h1>Dashboard</h1>
             <p class="hero-mood"><svg class="i"><use href="#i-check"/></svg><span id="heroMood">Buồng ươm đang ổn định</span></p>
             <p class="hero-sub num" id="heroSub">Buồng ươm điều khiển nhiệt độ PID tự động qua ESP32</p>
-            <div class="hero-actions"><button class="btn primary" onclick="openConnModal()"><svg class="i sm"><use href="#i-plus"/></svg>Thêm thiết bị</button></div>
+            <div class="hero-actions"><button class="btn primary" onclick="openConnModal()"><svg class="i sm"><use href="#i-plus"/></svg>Thêm thiết bị</button><span class="tag" id="devTag" style="min-height:42px;padding:0 14px;border-radius:var(--r-pill)">Chưa kết nối ESP32 · đang mô phỏng</span><button class="btn ghost" id="disconnBtn" hidden onclick="disconnectEsp()">Ngắt kết nối</button></div>
           </div>
           <div class="hero-scene">
             <svg class="hero-svg" viewBox="0 0 320 190" aria-hidden="true">
@@ -653,7 +654,7 @@
 
           <!-- Sưởi PID -->
           <section class="panel b-col4 b-ctl">
-            <div class="card-head" style="margin:0"><h2>Sưởi PID</h2><span class="tag ok"><span class="dot on"></span>Trực tuyến</span></div>
+            <div class="card-head" style="margin:0"><h2>Sưởi PID</h2><span class="tag" id="pidTag"><span class="dot"></span>Mô phỏng</span></div>
             <span class="ctl-label">Chế độ</span>
             <div class="modes" role="group" aria-label="Chế độ sưởi">
               <button aria-pressed="true" id="modeAuto" onclick="setMode('auto')"><span class="m-ic"><svg class="i sm"><use href="#i-robot"/></svg></span><b>Auto (PID)</b><small>Tự giữ nhiệt độ ở setpoint</small></button>
@@ -799,16 +800,16 @@
   <div id="connModal" class="scrim" hidden onclick="if (event.target === this) closeConnModal()">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="connTitle" style="width:min(520px,100%)">
       <h3 class="dialog-title" id="connTitle">Thêm thiết bị</h3>
-      <p class="dialog-desc">Cắm điện cho ESP32, dùng điện thoại vào WiFi <b>IoTFarm-…</b>, chọn WiFi nhà rồi nhập mã 6 số hiện trên trang cài đặt.</p>
+      <p class="dialog-desc">Nhập địa chỉ IP mà ESP32 in ra trên Serial Monitor sau khi vào WiFi. Máy tính hoặc điện thoại này phải dùng chung mạng WiFi với ESP32.</p>
       <button class="icon-btn dialog-x" onclick="closeConnModal()" aria-label="Đóng"><svg class="i"><use href="#i-x"/></svg></button>
       <div class="dialog-body form-stack">
-        <label class="field"><span>Mã thiết bị</span><input id="connCode" class="input num" inputmode="numeric" maxlength="6" placeholder="6 số" style="font-size:var(--t-xl);letter-spacing:0.3em" /></label>
+        <label class="field"><span>Địa chỉ IP của ESP32</span><input id="connIp" class="input num" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.1.50" style="font-size:var(--t-lg);letter-spacing:0.02em" onkeydown="if (event.key === 'Enter') saveConn()" /><small>Ví dụ 192.168.1.50. Có cổng riêng thì ghi thêm, như 192.168.1.50:8080.</small></label>
         <label class="field"><span>Tên khu vườn</span><input id="connName" class="input" placeholder="Vườn sân thượng" /></label>
         <p id="connErr" class="form-error" role="alert"></p>
       </div>
       <div class="dialog-foot">
         <button class="btn ghost" onclick="closeConnModal()">Huỷ</button>
-        <button class="btn primary" onclick="saveConn()">Thêm thiết bị</button>
+        <button class="btn primary" id="connBtn" onclick="saveConn()">Kết nối</button>
       </div>
     </div>
   </div>
@@ -1029,8 +1030,9 @@
       sim.sp = sp;
       store.set('iotfarm.applied', sim.plant);
       updateDash();
-      toast(`Đã áp dụng "${name}" (Setpoint ${vn(sp)}°C, tưới dưới ${soil}%) xuống ESP32`);
       switchTab('dashboard');
+      if (!ESP.ip) { toast(`Đã áp dụng "${name}" (Setpoint ${vn(sp)}°C, tưới dưới ${soil}%). Chưa kết nối ESP32 nên chỉ chạy mô phỏng.`); return; }
+      sendEsp({ sp, soil }).then((ok) => ok && toast(`Đã gửi "${name}" (Setpoint ${vn(sp)}°C, tưới dưới ${soil}%) xuống ESP32`));
     }
 
     // ---------- giao diện sáng / tối ----------
@@ -1049,13 +1051,106 @@
     function toggleLang() { toast('Bản tiếng Anh sẽ có trong phiên bản sau.'); }
 
     // ---------- thêm thiết bị ----------
-    function openConnModal() { document.getElementById('connErr').textContent = ''; document.getElementById('connModal').hidden = false; document.getElementById('connCode').focus(); }
+    // ESP32 chạy WebServer trong mạng LAN:
+    //   GET http://<IP>/data  -> JSON số đo, ví dụ {"temp":25.1,"hum":63,"soil":54,"heater":12,"sp":25,"mode":"auto"}
+    //   GET http://<IP>/set?sp=25&soil=50&mode=auto  -> đổi setpoint, ngưỡng tưới, chế độ
+    // ESP32 phải gửi header "Access-Control-Allow-Origin: *" thì trình duyệt mới đọc được.
+    const ESP = { ip: store.get('iotfarm.esp', null), name: '', online: false, fails: 0, timer: null };
+    function openConnModal() {
+      document.getElementById('connErr').textContent = '';
+      document.getElementById('connIp').value = ESP.ip ? ESP.ip.ip : '';
+      document.getElementById('connName').value = ESP.ip ? ESP.ip.name : '';
+      document.getElementById('connModal').hidden = false;
+      document.getElementById('connIp').focus();
+    }
     function closeConnModal() { document.getElementById('connModal').hidden = true; }
-    function saveConn() {
-      const code = document.getElementById('connCode').value.trim();
-      if (!/^\d{6}$/.test(code)) { document.getElementById('connErr').textContent = 'Mã thiết bị gồm 6 chữ số.'; return; }
-      closeConnModal();
-      toast(`Đang chờ thiết bị ${code} lên mạng…`);
+    function espUrl(ip, path) { return 'http://' + ip + path; }
+    async function espFetch(ip, path, ms = 4000) {
+      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+      try {
+        const r = await fetch(espUrl(ip, path), { signal: ctl.signal, cache: 'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const txt = await r.text();
+        try { return JSON.parse(txt); } catch (e) { return txt; }
+      } finally { clearTimeout(t); }
+    }
+    function validIp(v) {
+      const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:\d{1,5})?$/.exec(v);
+      return !!m && [m[1], m[2], m[3], m[4]].every((n) => +n <= 255);
+    }
+    async function saveConn() {
+      const ip = document.getElementById('connIp').value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+      const name = document.getElementById('connName').value.trim() || 'Buồng ươm ESP32';
+      const err = document.getElementById('connErr'); const btn = document.getElementById('connBtn');
+      if (!validIp(ip)) { err.textContent = 'Địa chỉ IP chưa đúng dạng, ví dụ 192.168.1.50.'; return; }
+      if (location.protocol === 'https:') { err.textContent = 'Trang đang mở bằng https nên trình duyệt chặn gọi tới ESP32 (http). Hãy mở file này trực tiếp trên máy (file://) hoặc qua http.'; return; }
+      err.textContent = ''; btn.disabled = true; btn.textContent = 'Đang kết nối…';
+      try {
+        const d = await espFetch(ip, '/data');
+        if (typeof d !== 'object' || d === null) throw new Error('not json');
+        ESP.ip = { ip, name }; store.set('iotfarm.esp', ESP.ip);
+        applyEspData(d);
+        closeConnModal();
+        startEsp();
+        toast(`Đã kết nối ${name} (${ip})`);
+      } catch (e) {
+        err.textContent = e.message === 'not json'
+          ? `ESP32 ở ${ip} có trả lời nhưng /data không phải JSON.`
+          : `Không kết nối được tới ${ip}. Kiểm tra ESP32 đã bật, cùng mạng WiFi, có đường /data và header Access-Control-Allow-Origin.`;
+      }
+      btn.disabled = false; btn.textContent = 'Kết nối';
+    }
+    function num(d, keys) { for (const k of keys) if (d[k] != null && !isNaN(+d[k])) return +d[k]; return null; }
+    function applyEspData(d) {
+      const t = num(d, ['temp', 't', 'temperature', 'nhietdo']);
+      const h = num(d, ['hum', 'h', 'humidity', 'doam']);
+      const so = num(d, ['soil', 's', 'soilMoisture', 'soil_moisture', 'amdat']);
+      let he = num(d, ['heater', 'pwm', 'output', 'heat', 'suoi']);
+      const sp = num(d, ['sp', 'setpoint', 'setPoint']);
+      if (t != null) sim.temp = t;
+      if (h != null) sim.hum = h;
+      if (so != null) sim.soil = so;
+      if (he != null) sim.heater = he > 100 ? he / 255 * 100 : he;   // chấp nhận PWM 0–255
+      if (sp != null) sim.sp = sp;
+      if (d.mode === 'auto' || d.mode === 'manual') { sim.mode = d.mode; syncModeButtons(); }
+    }
+    function setEspStatus(online) {
+      ESP.online = online;
+      const conn = !!ESP.ip;
+      const tag = document.getElementById('devTag');
+      tag.textContent = !conn ? 'Chưa kết nối ESP32 · đang mô phỏng' : `${ESP.ip.name} · ${ESP.ip.ip}${online ? '' : ' · mất kết nối'}`;
+      tag.className = 'tag ' + (!conn ? '' : online ? 'ok' : 'warn');
+      document.getElementById('disconnBtn').hidden = !conn;
+      document.getElementById('pidTag').innerHTML = !conn ? '<span class="dot"></span>Mô phỏng' : online ? '<span class="dot on"></span>Trực tuyến' : '<span class="dot warn"></span>Mất kết nối';
+      document.getElementById('pidTag').className = 'tag ' + (!conn ? '' : online ? 'ok' : 'warn');
+      document.getElementById('liveText').textContent = !conn ? 'Đang mô phỏng' : online ? 'Cập nhật trực tiếp' : 'Đang kết nối lại…';
+      document.querySelectorAll('.rail-live .dot, .topbar-r > .dot').forEach((el) => { el.className = 'dot ' + (conn && !online ? 'warn' : 'on'); });
+    }
+    async function pollEsp() {
+      if (!ESP.ip) return;
+      try {
+        const d = await espFetch(ESP.ip.ip, '/data', 3000);
+        if (typeof d === 'object' && d) { applyEspData(d); ESP.fails = 0; setEspStatus(true); updateDash(); pushChart(); }
+      } catch (e) {
+        if (++ESP.fails >= 3) setEspStatus(false);
+      }
+    }
+    function startEsp() {
+      clearInterval(ESP.timer);
+      if (chart) { chart.data.labels = []; chart.data.datasets.forEach((ds) => { ds.data = []; }); chart.update('none'); }
+      setEspStatus(true);
+      ESP.timer = setInterval(pollEsp, 2000);
+    }
+    function disconnectEsp() {
+      clearInterval(ESP.timer); ESP.timer = null; ESP.ip = null; store.del('iotfarm.esp');
+      setEspStatus(false);
+      toast('Đã ngắt kết nối ESP32, quay lại chế độ mô phỏng');
+    }
+    // Gửi cấu hình xuống ESP32 (nếu đang kết nối)
+    async function sendEsp(params) {
+      if (!ESP.ip) return false;
+      try { await espFetch(ESP.ip.ip, '/set?' + new URLSearchParams(params)); return true; }
+      catch (e) { toast(`Không gửi được lệnh tới ESP32 ${ESP.ip.ip}`); return false; }
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeNewPlantModal(); closeConnModal(); } });
 
@@ -1067,17 +1162,27 @@
     };
     sim.sp = sim.plant.sp;
 
+    function syncModeButtons() {
+      document.getElementById('modeAuto').setAttribute('aria-pressed', String(sim.mode === 'auto'));
+      document.getElementById('modeManual').setAttribute('aria-pressed', String(sim.mode === 'manual'));
+    }
     function setMode(m) {
       sim.mode = m;
-      document.getElementById('modeAuto').setAttribute('aria-pressed', String(m === 'auto'));
-      document.getElementById('modeManual').setAttribute('aria-pressed', String(m === 'manual'));
-      if (m === 'manual') { sim.heater = 0; sim.integ = 0; }
+      syncModeButtons();
+      if (m === 'manual' && !ESP.ip) { sim.heater = 0; sim.integ = 0; }
       updateDash();
+      sendEsp({ mode: m });
     }
-    function stepSp(d) { sim.sp = Math.max(10, Math.min(40, sim.sp + d)); updateDash(); }
+    let spTimer = null;
+    function stepSp(d) {
+      sim.sp = Math.max(10, Math.min(40, sim.sp + d)); updateDash();
+      // gom các lần bấm liên tiếp rồi mới gửi một lệnh
+      clearTimeout(spTimer); spTimer = setTimeout(() => sendEsp({ sp: sim.sp }), 600);
+    }
 
     function tick(at) {
-      // PID rời rạc, mỗi giây một lần
+      if (ESP.ip) return;   // đang đọc số đo thật từ ESP32
+      // PID rời rạc, mỗi giây một lần (mô phỏng khi chưa kết nối ESP32)
       if (sim.mode === 'auto') {
         const err = sim.sp - sim.temp;
         sim.integ = Math.max(-40, Math.min(40, sim.integ + err));
@@ -1240,13 +1345,15 @@
     renderPresets();
     initWeather();
     initChart();
-    setMode('auto');
+    syncModeButtons();
+    setEspStatus(false);
     const savedTab = store.get('iotfarm.tab', 'plants');
     switchTab(savedTab === 'admin' && (currentUser() || {}).role !== 'Admin' ? 'dashboard' : savedTab);
     checkAuth();
     // chạy trước 60 giây để biểu đồ có sẵn đường cong khởi động
     for (let k = 60; k > 0; k--) tick(Date.now() - k * 1000);
     setInterval(() => tick(), 1000);
+    if (ESP.ip) { startEsp(); pollEsp(); }
   </script>
 </body>
 </html>
